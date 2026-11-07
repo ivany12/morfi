@@ -163,6 +163,7 @@ VIEWFN.ajustes = el => {
       <label>Canales de pedidos (uno por línea)<textarea name="canales" rows="4">${s.canales.join('\n')}</textarea></label>
       <label>Zonas de envío (una por línea: Zona, precio)<textarea name="envios" rows="3">${s.envios.map(e => e.zona + ', ' + e.precio).join('\n')}</textarea></label>
       <label>Repartidores (uno por línea)<textarea name="repartidores" rows="3">${s.repartidores.join('\n')}</textarea></label>
+      ${window.REPARTO_URL ? `<p class="muted">App del repartidor (se abre con su Gmail, que tiene que estar agregado como miembro del local): <a href="${window.REPARTO_URL()}" target="_blank" rel="noopener">${window.REPARTO_URL()}</a></p>` : ''}
       <label>Categorías de gastos (una por línea)<textarea name="catGastos" rows="4">${s.catGastos.join('\n')}</textarea></label>
       <label>Propinas sugeridas en la precuenta (% separados por coma)<input name="propinas" value="${s.propinas.join(', ')}"></label>
       <label>Promociones automáticas (una por línea: Nombre; días; horario; categoría o todas; %)<textarea name="promos" rows="3" placeholder="Happy hour; lun,mar,mie,jue; 18:00-20:00; Cervezas y tragos; 30">${(s.promos || []).map(p => [p.nombre, (p.dias || []).join(','), p.desde ? p.desde + '-' + p.hasta : '', p.cat || 'todas', p.pct].join('; ')).join('\n')}</textarea></label>

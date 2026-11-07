@@ -52,6 +52,15 @@ window.CLOUD_USER = email;
 window.CLOUD_SIGNOUT = () => { localStorage.removeItem('morfi_tid'); signOut(auth).then(() => location.reload()); };
 window.TENANT_SWITCH = () => { localStorage.removeItem('morfi_tid'); sessionStorage.removeItem('morfi_me'); location.reload(); };
 window.PUBLIC_URL = () => location.origin + location.pathname.replace(/[^/]*$/, '') + 'carta.html?r=' + TID;
+const BASE = () => location.origin + location.pathname.replace(/[^/]*$/, '');
+window.REPARTO_URL = () => BASE() + 'reparto.html?r=' + TID;
+/* Seguimiento de delivery: un doc por pedido en tenants/{t}/track/{token}. Lo lee track.html (público, por token) y lo escribe el local y la app del repartidor.
+   No se escucha en la app a propósito: la moto manda posición cada pocos segundos y no queremos redibujar pantallas por eso. */
+window.TRACK_API = {
+  url: tok => BASE() + 'track.html?r=' + TID + '&t=' + tok,
+  set: (tok, data) => setDoc(doc(db, 'tenants', TID, 'track', tok), { ...clean(data), upd: Date.now() }, { merge: true }),
+  update: (tok, data) => updateDoc(doc(db, 'tenants', TID, 'track', tok), { ...clean(data), upd: Date.now() })
+};
 window.TENANT_MEMBERS = () => TENANT && {
   list: TENANT.members || [], owner: TENANT.owner, canEdit: TENANT.owner === email(),
   add: e => updateDoc(doc(db, 'tenants', TID), { members: arrayUnion(e) }).then(() => { TENANT.members = [...new Set([...(TENANT.members || []), e])]; }).catch(err => toast('No se pudo: ' + err.code, 1)),

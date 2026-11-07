@@ -17,6 +17,8 @@ service cloud.firestore {
           && request.resource.data.cliente.nombre is string && request.resource.data.cliente.nombre.size() <= 80;
         allow list, update, delete: if member(t);
       }
+      // Seguimiento de delivery: el cliente lee solo su pedido (el id es un token imposible de adivinar); listar y escribir, solo el equipo.
+      match /track/{d} { allow get: if true; allow list, write: if member(t); }
       match /{c}/{d} { allow read, write: if member(t); }
     }
   }

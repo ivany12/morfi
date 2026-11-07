@@ -135,9 +135,9 @@ VIEWFN.pedidos = el => {
       const next = st === 'nuevo' ? 'A preparar →' : st === 'cocina' ? 'Listo →' : st === 'listo' ? (o.cliente?.dir ? 'Despachar →' : 'Entregado ✓') : 'Entregado ✓';
       return `<div class="card ord" data-o="${o.id}"><div class="row"><b>#${o.num} ${esc(o.canal)}</b><span class="t ${mins(o.creado) > 40 ? 'late' : ''}">${mins(o.creado)}′</span></div>
         <div>${esc(o.cliente?.nombre || '')}${o.ref ? ' · app #' + esc(o.ref) : ''}</div>${o.cliente?.dir ? `<div class="muted">📍 ${esc(o.cliente.dir)}</div>` : ''}
-        ${o.repartidor ? `<div class="muted">🛵 ${esc(o.repartidor)}</div>` : ''}
+        ${o.repartidor ? `<div class="muted">🛵 ${esc(o.repartidor)}${o.entregaT ? ' · ✓ entregó' : ''}</div>` : ''}${o.linkEnviado ? '<div class="muted">🔗 link de seguimiento enviado</div>' : ''}
         <div class="row"><span class="muted">${sum(o.items, i => i.q)} ítems · ${money(c.total)}</span>${o.items.length ? (c.resta <= 0 ? '<span class="pill ok">pagado</span>' : '<span class="pill warn">a cobrar</span>') : ''}</div>
-        <div class="act"><button class="btn sm ${st === 'camino' || next.includes('✓') ? 'pri' : ''}" data-next="${o.id}">${next}</button></div></div>`;
+        <div class="act">${o.cliente?.dir && o.cliente?.tel ? `<button class="btn sm" data-trk="${o.id}">${o.track ? 'Reenviar link' : 'Enviar link'}</button>` : ''}<button class="btn sm ${st === 'camino' || next.includes('✓') ? 'pri' : ''}" data-next="${o.id}">${next}</button></div></div>`;
     }).join('') || '<p class="muted pad">—</p>'}</section>`;
   }).join('')}</div></div>`;
   $$('[data-c]', el).forEach(b => b.onclick = () => {
@@ -155,8 +155,9 @@ VIEWFN.pedidos = el => {
     }, 'Crear');
     const m = $('.modal'); m && bindClienteLookup(m);
   });
-  $$('.ord', el).forEach(c => c.onclick = e => { if (!e.target.closest('[data-next]')) go('orden', c.dataset.o); });
+  $$('.ord', el).forEach(c => c.onclick = e => { if (!e.target.closest('[data-next],[data-trk]')) go('orden', c.dataset.o); });
   $$('[data-next]', el).forEach(b => b.onclick = () => advance(DB.get('orders', b.dataset.next)));
+  $$('[data-trk]', el).forEach(b => b.onclick = () => sendTrack(b.dataset.trk));
   $$('[data-acc]', el).forEach(b => b.onclick = () => acceptOnline(DB.get('inbox', b.dataset.acc)));
   $$('[data-rej]', el).forEach(b => b.onclick = () => ask('Rechazar pedido online', [{ name: 'motivo', label: 'Motivo (lo ve el cliente)', value: 'No podemos tomarlo ahora' }], v => DB.put('inbox', { ...DB.get('inbox', b.dataset.rej), estado: 'rechazado', motivo: v.motivo }), 'Rechazar'));
 };
@@ -167,15 +168,39 @@ function advance(o) {
   if (st === 'nuevo') sendKitchen(o);
   const cur = DB.get('orders', o.id);
   if (nx === 'camino' && settings().repartidores.length) {
-    return ask('¿Quién lo lleva?', [{ name: 'r', label: 'Repartidor', type: 'select', options: settings().repartidores }], v => { DB.put('orders', { ...cur, etapa: 'camino', repartidor: v.r, salio: Date.now() }); syncInbox(cur, 'camino'); }, 'Despachar');
+    return ask('¿Quién lo lleva?', [{ name: 'r', label: 'Repartidor', type: 'select', options: settings().repartidores }], v => { const t = Date.now(); DB.put('orders', { ...cur, etapa: 'camino', repartidor: v.r, salio: t }); syncInbox(cur, 'camino'); syncTrack(cur, { estado: 'camino', repartidor: v.r, salio: t }); }, 'Despachar');
   }
   if (nx === 'entregado') {
     if (orderCalc(cur).resta > 0) { if (!can('cobrar')) return toast('Falta cobrarlo', 1); return cobrar(cur.id, true); }
     DB.put('orders', { ...cur, etapa: 'entregado' }); finalizeOrder({ ...cur, etapa: 'entregado' }); return;
   }
-  DB.put('orders', { ...cur, etapa: nx }); syncInbox(cur, nx);
+  DB.put('orders', { ...cur, etapa: nx }); syncInbox(cur, nx); syncTrack(cur, { estado: nx === 'camino' ? 'camino' : nx === 'listo' ? 'listo' : 'preparando' });
 }
 function syncInbox(o, estado) { if (o.inbox) { const ib = DB.get('inbox', o.inbox); ib && DB.put('inbox', { ...ib, estado }); } }
+/* ───────── seguimiento en vivo del delivery (link por WhatsApp) ───────── */
+function syncTrack(o, patch) { if (o && o.track && window.TRACK_API) window.TRACK_API.update(o.track, patch).catch(() => { }); }
+function sendTrack(id) {
+  const o = DB.get('orders', id), c = (o && o.cliente) || {};
+  if (!o) return;
+  if (!window.TRACK_API) return toast('El seguimiento funciona solo con el local en la nube', 1);
+  if (!c.tel || !c.dir) return toast('Faltan el teléfono o la dirección del cliente', 1);
+  const s = settings(), st = o.etapa || 'nuevo';
+  const tok = o.track || GEO.token();
+  window.TRACK_API.set(tok, {
+    tok, orderId: o.id, num: o.num, nombre: GEO.firstName(c.nombre), dir: c.dir, local: s.local, tel: s.tel || '', color: s.color || '',
+    estado: st === 'camino' ? 'camino' : st === 'listo' ? 'listo' : 'preparando', repartidor: o.repartidor || '', salio: o.salio || null,
+    ...(o.geo ? { dest: { lat: o.geo.lat, lng: o.geo.lng } } : {})
+  }).catch(e => toast('No se pudo crear el seguimiento: ' + e.code, 1));
+  DB.put('orders', { ...DB.get('orders', id), track: tok, linkEnviado: Date.now() });
+  if (!o.geo) GEO.geocode(c.dir).then(g => {
+    if (!g) return toast('No pude ubicar la dirección en el mapa: el cliente va a ver el estado sin mapa', 1);
+    DB.put('orders', { ...DB.get('orders', id), geo: g });
+    window.TRACK_API.update(tok, { dest: { lat: g.lat, lng: g.lng } }).catch(() => { });
+  });
+  const msg = 'Hola ' + (GEO.firstName(c.nombre) || '') + '! Seguí tu pedido de ' + s.local + ' en vivo: ' + window.TRACK_API.url(tok);
+  window.open('https://wa.me/' + GEO.waPhone(c.tel) + '?text=' + encodeURIComponent(msg), '_blank');
+  toast('Link listo: tocá enviar en WhatsApp');
+}
 function acceptOnline(i) {
   const tipo = i.tipo === 'mesa' ? 'mesa' : i.tipo === 'delivery' ? 'delivery' : 'mostrador';
   const items = i.items.map(it => { const p = DB.get('prods', it.pid); return { id: uid(), pid: it.pid, n: p?.name || it.n, p: p?.price ?? it.p, q: it.q, mods: it.mods || [], nota: it.nota || '', station: p?.station || settings().estaciones[0], by: 'Online' }; });

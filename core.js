@@ -142,6 +142,7 @@ function finalizeOrder(o) {
   Object.entries(uso).forEach(([ins, q]) => moveStock(ins, -q, 'venta', orderLabel(fin)));
   (fin.pagos || []).filter(p => p.medio === 'Cuenta corriente' && fin.cliente?.id).forEach(p => DB.put('ctamov', { cli: fin.cliente.id, t: Date.now(), monto: p.monto, ref: orderLabel(fin), por: ME?.name }));
   if (fin.inbox) { const ib = DB.get('inbox', fin.inbox); ib && DB.put('inbox', { ...ib, estado: 'entregado' }); }
+  if (fin.track && window.TRACK_API) window.TRACK_API.update(fin.track, { estado: 'entregado' }).catch(() => { });
 }
 function moveStock(ins, qty, tipo, ref, costo) {
   const i = DB.get('insumos', ins); if (!i) return;
